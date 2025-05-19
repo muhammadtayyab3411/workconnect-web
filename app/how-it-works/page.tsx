@@ -68,7 +68,7 @@ export default function HowItWorks() {
       number: 3,
       icon: <Shield className="w-8 h-8 text-zinc-900" />,
       title: "Hire & Pay Securely",
-      description: "Choose, chat, and pay through the platform",
+      description: "Choose, chat, and pay",
       image: "/images/how-it-works/step3-image.png",
       alt: "Hire and pay securely"
     }

@@ -191,7 +191,7 @@ export default function AboutUs() {
               <div className="border border-zinc-200 rounded-lg p-6 flex flex-col items-center">
                 <div className="w-40 h-40 rounded-full overflow-hidden mb-6">
                   <Avatar className="w-full h-full"> 
-                    <AvatarImage src="/images/user1.jpg" className="w-full h-full object-cover" />
+                    <AvatarImage src="/images/pricing/profiles/sarah-profile.jpg" className="w-full h-full object-cover" />
                     <AvatarFallback>
                       <User className="w-10 h-10" />
                     </AvatarFallback>

@@ -255,7 +255,7 @@ export default function Home() {
                   <div className="flex flex-col gap-4">
                     <div className="flex items-center gap-4">
                       <Avatar className="w-12 h-12">
-                        <AvatarImage src="/images/user1.jpg" alt="Sarah Johnson" className="absolute inset-0 w-full h-full object-cover" />
+                        <AvatarImage src="/images/pricing/profiles/sarah-profile.jpg" alt="Sarah Johnson" className="absolute inset-0 w-full h-full object-cover" />
                         <AvatarFallback>SJ</AvatarFallback>
                       </Avatar>
                       <div>

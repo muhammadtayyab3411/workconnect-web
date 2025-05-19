@@ -4,13 +4,8 @@ import React, { useState, useRef } from 'react';
 import { 
   ChevronDown, 
   Shield, 
-  UserCircle,
   Database,
-  Share2,
-  Clock,
-  AlertCircle,
   Globe,
-  FileEdit,
   Download,
   Lock,
   Mail,
@@ -24,8 +19,8 @@ import {
   Baby,
   RefreshCw
 } from 'lucide-react';
-import Header from '@/components/layout/Header';
-import Footer from '@/components/layout/Footer';
+import { Header } from '@/components/common/Header';
+import { Footer } from '@/components/common/Footer';
 import { Button } from '@/components/ui/button';
 import { AnimatePresence, motion } from 'framer-motion';
 
