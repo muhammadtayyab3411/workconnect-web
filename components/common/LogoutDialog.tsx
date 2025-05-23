@@ -8,8 +8,8 @@ import {
   DialogHeader,
   DialogTitle,
   DialogClose,
+  DialogDescription,
 } from "@/components/ui/dialog";
-import { useRouter } from "next/navigation";
 
 interface LogoutDialogProps {
   open: boolean;
@@ -17,13 +17,25 @@ interface LogoutDialogProps {
 }
 
 export function LogoutDialog({ open, onOpenChange }: LogoutDialogProps) {
-  const router = useRouter();
+  // No need to use the auth context logout function as we're handling logout manually
+  // const { logout } = useAuth();
 
   const handleLogout = () => {
-    // Perform logout actions here
-    // For now, we'll just redirect to login page
-    router.push("/auth/login");
+    // First close the dialog to avoid React router hooks issues
     onOpenChange(false);
+    
+    // Use a small timeout to ensure the dialog is closed
+    setTimeout(() => {
+      // First clear any auth data
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('accessToken');
+        localStorage.removeItem('refreshToken');
+        document.cookie = 'accessToken=; path=/; expires=Thu, 01 Jan 1970 00:00:01 GMT;';
+      }
+      
+      // Then perform a hard navigation to login page
+      window.location.href = '/auth/login';
+    }, 100);
   };
 
   return (
@@ -46,12 +58,10 @@ export function LogoutDialog({ open, onOpenChange }: LogoutDialogProps) {
             </DialogTitle>
           </div>
         </DialogHeader>
-        <div className="px-6 pb-2">
-          <p className="text-center text-zinc-600 text-sm">
-            Are you sure you want to logout from your account? 
-            You will need to log back in to access your account.
-          </p>
-        </div>
+        <DialogDescription className="px-6 pb-2 text-center text-zinc-600 text-sm">
+          Are you sure you want to logout from your account? 
+          You will need to log back in to access your account.
+        </DialogDescription>
         <DialogFooter className="p-6 pt-4 flex gap-3">
           <Button 
             variant="outline" 

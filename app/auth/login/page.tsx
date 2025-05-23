@@ -9,25 +9,110 @@ import {
   Zap,
   Shield,
   Users,
-  Lock
+  Lock,
+  AlertCircle,
+  Mail
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useAuth } from '@/lib/auth-context';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import { useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
+import axios from 'axios';
+
+// Create a login validation schema
+const loginSchema = z.object({
+  email: z.string()
+    .min(1, 'Email is required')
+    .email('Please enter a valid email address'),
+  password: z.string()
+    .min(1, 'Password is required'),
+  rememberMe: z.boolean().optional()
+});
+
+type LoginFormValues = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
+  const { login, error: authError, isLoading } = useAuth();
+  const [serverError, setServerError] = useState<string | null>(null);
+  const [socialLoading, setSocialLoading] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [rememberMe, setRememberMe] = useState(false);
+  const [verificationRequired, setVerificationRequired] = useState<{ email: string; message: string } | null>(null);
+  const router = useRouter();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: '',
+      password: '',
+      rememberMe: false
+    }
+  });
+
+  const onSubmit = async (data: LoginFormValues) => {
+    setServerError(null);
+    setVerificationRequired(null);
+    
+    try {
+      await login(data.email, data.password);
+      
+      // Add explicit redirection here
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Login error:', err);
+      
+      // Check if this is a verification error
+      if (axios.isAxiosError(err)) {
+        const errorData = err.response?.data;
+        if (errorData?.verification_required) {
+          setVerificationRequired({
+            email: errorData.email || data.email,
+            message: errorData.message || 'Please verify your email address to continue.'
+          });
+          return;
+        }
+      }
+      
+      setServerError('Invalid email or password. Please try again.');
+    }
+  };
+
+  const handleSocialLogin = async (provider: string) => {
+    try {
+      setSocialLoading(provider);
+      
+      if (provider === 'google') {
+        const result = await signIn('google', {
+          callbackUrl: '/dashboard',
+          redirect: false,
+        });
+        
+        if (result?.error) {
+          setServerError(`Error signing in with Google: ${result.error}`);
+        } else if (result?.url) {
+          // Redirect to the callback URL
+          router.push(result.url);
+        }
+      } else if (provider === 'facebook') {
+        setServerError('Facebook login not implemented yet.');
+      }
+    } catch (error) {
+      console.error(`${provider} login error:`, error);
+      setServerError(`Error signing in with ${provider}. Please try again.`);
+    } finally {
+      setSocialLoading(null);
+    }
+  };
 
   const togglePasswordVisibility = () => {
     setShowPassword(!showPassword);
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    // Handle login logic here
-    console.log('Login attempt with:', { email, password, rememberMe });
   };
 
   return (
@@ -118,7 +203,59 @@ export default function LoginPage() {
                   <p className="text-zinc-500 text-sm mb-8">Enter your email below to continue</p>
                 </div>
 
-                <form onSubmit={handleSubmit}>
+                {(authError || serverError) && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-md flex gap-2 items-center">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{serverError || authError}</span>
+                  </div>
+                )}
+
+                {verificationRequired && (
+                  <div className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-700 rounded-md">
+                    <div className="flex gap-2 items-start">
+                      <Mail className="h-5 w-5 mt-0.5 flex-shrink-0" />
+                      <div>
+                        <p className="font-medium mb-1">Email verification required</p>
+                        <p className="text-sm">{verificationRequired.message}</p>
+                        <p className="text-sm mt-2">
+                          Please check your email <span className="font-medium">{verificationRequired.email}</span> and click the verification link.
+                        </p>
+                        <div className="mt-3 flex gap-2 text-sm">
+                          <button 
+                            onClick={async () => {
+                              try {
+                                const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/resend-verification/`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ email: verificationRequired.email }),
+                                });
+                                if (response.ok) {
+                                  setServerError(null);
+                                  setVerificationRequired(null);
+                                  setServerError('Verification email sent! Please check your inbox.');
+                                }
+                              } catch (_error) {
+                                setServerError('Failed to resend verification email.');
+                              }
+                            }}
+                            className="text-amber-600 hover:text-amber-700 underline"
+                          >
+                            Resend verification email
+                          </button>
+                          <span className="text-amber-500">•</span>
+                          <button 
+                            onClick={() => setVerificationRequired(null)}
+                            className="text-amber-600 hover:text-amber-700 underline"
+                          >
+                            Try again
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit(onSubmit)}>
                   <div className="space-y-5">
                     <div className="space-y-1.5">
                       <label htmlFor="email" className="block text-sm font-medium text-zinc-700">
@@ -128,11 +265,14 @@ export default function LoginPage() {
                         id="email"
                         type="email"
                         placeholder="name@example.com"
-                        value={email}
-                        onChange={(e) => setEmail(e.target.value)}
-                        className="w-full p-2.5 border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-300"
-                        required
+                        className={`w-full p-2.5 border rounded-md focus:outline-none focus:ring-1 ${
+                          errors.email ? 'border-red-300 focus:ring-red-300' : 'border-zinc-200 focus:ring-zinc-300'
+                        }`}
+                        {...register('email')}
                       />
+                      {errors.email && (
+                        <p className="text-red-500 text-xs mt-1">{errors.email.message}</p>
+                      )}
                     </div>
 
                     <div className="space-y-1.5">
@@ -144,10 +284,10 @@ export default function LoginPage() {
                           id="password"
                           type={showPassword ? "text" : "password"}
                           placeholder=""
-                          value={password}
-                          onChange={(e) => setPassword(e.target.value)}
-                          className="w-full p-2.5 border border-zinc-200 rounded-md pr-10 focus:outline-none focus:ring-1 focus:ring-zinc-300"
-                          required
+                          className={`w-full p-2.5 border rounded-md pr-10 focus:outline-none focus:ring-1 ${
+                            errors.password ? 'border-red-300 focus:ring-red-300' : 'border-zinc-200 focus:ring-zinc-300'
+                          }`}
+                          {...register('password')}
                         />
                         <button
                           type="button"
@@ -162,6 +302,9 @@ export default function LoginPage() {
                           )}
                         </button>
                       </div>
+                      {errors.password && (
+                        <p className="text-red-500 text-xs mt-1">{errors.password.message}</p>
+                      )}
                     </div>
 
                     <div className="flex items-center justify-between">
@@ -169,9 +312,8 @@ export default function LoginPage() {
                         <input
                           id="remember-me"
                           type="checkbox"
-                          checked={rememberMe}
-                          onChange={() => setRememberMe(!rememberMe)}
                           className="h-4 w-4 text-zinc-900 rounded border-zinc-300 focus:ring-zinc-500"
+                          {...register('rememberMe')}
                         />
                         <label htmlFor="remember-me" className="ml-2 block text-sm text-zinc-600">
                           Remember me
@@ -185,8 +327,9 @@ export default function LoginPage() {
                     <Button 
                       type="submit"
                       className="w-full bg-zinc-900 hover:bg-zinc-800 text-white py-3 rounded-md mt-4"
+                      disabled={isLoading}
                     >
-                      Log in
+                      {isLoading ? 'Logging in...' : 'Log in'}
                     </Button>
 
                     <div className="relative flex items-center justify-center mt-6 mb-6">
@@ -199,6 +342,8 @@ export default function LoginPage() {
                         type="button" 
                         className="p-2.5 border border-zinc-200 rounded-md w-12 h-12 flex items-center justify-center"
                         aria-label="Sign in with Google"
+                        onClick={() => handleSocialLogin('google')}
+                        disabled={!!socialLoading}
                       >
                         <Image 
                           src="/images/google-icon.svg"
@@ -211,6 +356,8 @@ export default function LoginPage() {
                         type="button" 
                         className="p-2.5 border border-zinc-200 rounded-md w-12 h-12 flex items-center justify-center"
                         aria-label="Sign in with Facebook"
+                        onClick={() => handleSocialLogin('facebook')}
+                        disabled={!!socialLoading}
                       >
                         <Image 
                           src="/images/facebook-icon.svg"
@@ -223,6 +370,7 @@ export default function LoginPage() {
                         type="button" 
                         className="p-2.5 border border-zinc-200 rounded-md w-12 h-12 flex items-center justify-center"
                         aria-label="Sign in with Apple"
+                        disabled={true}
                       >
                         <Image 
                           src="/images/apple-icon.svg"

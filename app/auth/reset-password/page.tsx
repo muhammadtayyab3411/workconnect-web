@@ -1,39 +1,71 @@
 "use client";
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Lock, ShieldCheck, Mail } from 'lucide-react';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { Lock, ShieldCheck, Key } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 
-export default function ForgotPasswordPage() {
-  const [email, setEmail] = useState('');
+export default function ResetPasswordPage() {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState(false);
+  
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const token = searchParams.get('token');
+
+  useEffect(() => {
+    if (!token) {
+      router.push('/auth/forgot-password');
+    }
+  }, [token, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
 
+    if (password !== confirmPassword) {
+      setError('Passwords do not match');
+      setLoading(false);
+      return;
+    }
+
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters long');
+      setLoading(false);
+      return;
+    }
+
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/forgot-password/`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/reset-password/${token}/`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({
+          password,
+          confirm_password: confirmPassword,
+        }),
       });
 
       const data = await response.json();
 
       if (response.ok) {
+        setSuccess(true);
         setSubmitted(true);
+        setTimeout(() => {
+          router.push('/auth/login');
+        }, 3000);
       } else {
-        setError(data.error || 'Failed to send reset email');
+        setError(data.error || 'Failed to reset password');
       }
     } catch (_) {
       setError('Network error. Please try again.');
@@ -41,6 +73,10 @@ export default function ForgotPasswordPage() {
       setLoading(false);
     }
   };
+
+  if (!token) {
+    return null; // Will redirect
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -77,11 +113,15 @@ export default function ForgotPasswordPage() {
                 height={400}
                 className="w-full h-auto object-cover"
                 priority
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/images/forgot-hero.png'; // Fallback to forgot password image
+                }}
               />
             </div>
             <div className="text-left max-w-lg w-full">
-              <h1 className="text-3xl font-bold text-zinc-900 mb-4">Forgot your password?</h1>
-              <p className="text-lg text-zinc-500">No worries, we&apos;ll help you get back in. Enter your email address and we&apos;ll send you instructions to reset your password securely.</p>
+              <h1 className="text-3xl font-bold text-zinc-900 mb-4">Reset your password</h1>
+              <p className="text-lg text-zinc-500">Enter your new password below. Make sure it&apos;s strong and secure to protect your account.</p>
             </div>
           </div>
 
@@ -95,62 +135,87 @@ export default function ForgotPasswordPage() {
                   </Alert>
                 )}
                 
+                {success && (
+                  <Alert className="mb-4 p-3 bg-green-50 border border-green-200 text-green-700 rounded-md">
+                    Password reset successful! Redirecting to login...
+                  </Alert>
+                )}
+
                 <div className="mb-6">
-                  <label htmlFor="email" className="block text-sm font-medium text-zinc-700 mb-2">
-                    Email address
+                  <label htmlFor="password" className="block text-sm font-medium text-zinc-700 mb-2">
+                    New Password
                   </label>
                   <Input
-                    id="email"
-                    type="email"
-                    placeholder="Enter your email"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    id="password"
+                    type="password"
+                    placeholder="Enter new password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
                     className="w-full p-2.5 border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-300"
                     required
-                    disabled={loading || submitted}
+                    disabled={loading || success}
                   />
                 </div>
+
+                <div className="mb-6">
+                  <label htmlFor="confirmPassword" className="block text-sm font-medium text-zinc-700 mb-2">
+                    Confirm New Password
+                  </label>
+                  <Input
+                    id="confirmPassword"
+                    type="password"
+                    placeholder="Confirm new password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    className="w-full p-2.5 border border-zinc-200 rounded-md focus:outline-none focus:ring-1 focus:ring-zinc-300"
+                    required
+                    disabled={loading || success}
+                  />
+                </div>
+
                 <Button
                   type="submit"
                   className="w-full bg-zinc-900 hover:bg-zinc-800 text-white py-3 rounded-md mb-6"
-                  disabled={loading || submitted}
+                  disabled={loading || success}
                 >
-                  {loading ? "Sending..." : submitted ? "Link Sent!" : "Send Reset Link"}
+                  {loading ? "Resetting..." : submitted ? "Password Reset!" : "Reset Password"}
                 </Button>
+
                 <div className="flex justify-between items-start text-zinc-600 text-sm mb-6 gap-2 flex-wrap mt-3">
                   <div className="flex flex-col items-center flex-1">
-                  <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
-                    <div className="w-10 h-10 flex items-center justify-center">
-                      <Lock className="w-6 h-6 text-black" />
+                    <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 flex items-center justify-center">
+                        <Lock className="w-6 h-6 text-black" />
+                      </div>
                     </div>
-                  </div>
                     <span className='mt-2 text-center'>Secure Process</span>
                   </div>
                   <div className="flex flex-col items-center flex-1">
-                  <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
-                    <div className="w-10 h-10 flex items-center justify-center">
-                      <ShieldCheck className="w-6 h-6 text-black" />
+                    <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 flex items-center justify-center">
+                        <ShieldCheck className="w-6 h-6 text-black" />
+                      </div>
                     </div>
-                  </div>
-                    <span className='mt-2 text-center'>End-to-end encrypted</span>
+                    <span className='mt-2 text-center'>Encrypted Storage</span>
                   </div>
                   <div className="flex flex-col items-center flex-1">
-                  <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
-                    <div className="w-10 h-10 flex items-center justify-center">
-                      <Mail className="w-6 h-6 text-black" />
+                    <div className="w-13 h-13 bg-zinc-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 flex items-center justify-center">
+                        <Key className="w-6 h-6 text-black" />
+                      </div>
                     </div>
-                  </div>
-                    <span className='mt-2 text-center'>Quick recovery</span>
+                    <span className='mt-2 text-center'>One-time Link</span>
                   </div>
                 </div>
+
                 <div className="flex flex-col gap-2 text-center">
                   <span className="text-sm text-zinc-600 mt-4">
                     Remember your password?&nbsp;
                     <Link href="/auth/login" className="text-zinc-900 font-medium hover:underline">Sign in</Link>
                   </span>
                   <span className="text-sm text-zinc-600 mt-4">
-                    Don&apos;t have an account?&nbsp;
-                    <Link href="/auth/signup" className="text-zinc-900 font-medium hover:underline">Create one</Link>
+                    Need help?&nbsp;
+                    <Link href="/auth/forgot-password" className="text-zinc-900 font-medium hover:underline">Request new link</Link>
                   </span>
                 </div>
               </form>
