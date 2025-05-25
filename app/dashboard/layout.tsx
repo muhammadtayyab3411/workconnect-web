@@ -36,10 +36,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Show loading state if authentication is still being checked (but not if timeout reached)
   if (isLoading && !timeoutReached) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white">
-        <div className="text-center">
-          <div className="inline-block h-8 w-8 animate-spin rounded-full border-4 border-solid border-zinc-900 border-r-transparent"></div>
-          <p className="mt-4 text-zinc-600">Loading your dashboard...</p>
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="flex items-center space-x-2">
+          <div className="w-8 h-8 border-4 border-zinc-300 border-t-zinc-900 rounded-full animate-spin"></div>
+          <span className="text-zinc-600">Loading...</span>
         </div>
       </div>
     );
@@ -51,11 +51,15 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return null;
   }
   
+  // Extract user information with fallbacks
+  const userName = user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User';
+  const userImage = user?.profile_picture || "/images/user2.jpg";
+  
   return (
     <div className="min-h-screen bg-white">
       <DashboardHeader 
-        userName={user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User'} 
-        userImage="/images/user2.jpg" 
+        userName={userName}
+        userImage={userImage}
         notificationCount={5} // This would come from your API in a real app
       />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">

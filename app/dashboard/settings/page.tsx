@@ -21,13 +21,16 @@ import { useAuth } from "@/lib/auth-context";
 import { userAPI, UserProfile, ProfileUpdateData } from "@/lib/api";
 
 export default function SettingsPage() {
-  const { user, loginWithTokens } = useAuth();
+  const { user, loginWithTokens, updateUser } = useAuth();
   const [profileData, setProfileData] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Form validation state
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({});
 
   // Form state
   const [formData, setFormData] = useState<ProfileUpdateData>({
@@ -75,12 +78,110 @@ export default function SettingsPage() {
     }
   }, [user]);
 
+  // Validate individual field
+  const validateField = (field: keyof ProfileUpdateData, value: string): string | null => {
+    switch (field) {
+      case 'first_name':
+        if (!value || !value.trim()) {
+          return 'First name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'First name must be at least 2 characters';
+        }
+        return null;
+        
+      case 'last_name':
+        if (!value || !value.trim()) {
+          return 'Last name is required';
+        }
+        if (value.trim().length < 2) {
+          return 'Last name must be at least 2 characters';
+        }
+        return null;
+        
+      case 'phone_number':
+        // Phone is optional, but if provided, should be valid
+        if (value && value.trim()) {
+          const phoneRegex = /^[+]?[\d\s\-\(\)]+$/;
+          if (!phoneRegex.test(value.trim())) {
+            return 'Please enter a valid phone number';
+          }
+          // Remove all non-digit characters to count digits
+          const digitsOnly = value.replace(/\D/g, '');
+          if (digitsOnly.length < 10) {
+            return 'Phone number must be at least 10 digits';
+          }
+        }
+        return null;
+        
+      case 'date_of_birth':
+        // DOB is optional, but if provided, should be valid
+        if (value && value.trim()) {
+          const birthDate = new Date(value);
+          const today = new Date();
+          const age = today.getFullYear() - birthDate.getFullYear();
+          
+          if (birthDate > today) {
+            return 'Date of birth cannot be in the future';
+          }
+          if (age < 16) {
+            return 'You must be at least 16 years old';
+          }
+          if (age > 120) {
+            return 'Please enter a valid date of birth';
+          }
+        }
+        return null;
+        
+      default:
+        return null;
+    }
+  };
+
+  // Validate entire form
+  const validateForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    // Validate all fields
+    Object.keys(formData).forEach((field) => {
+      const fieldKey = field as keyof ProfileUpdateData;
+      const value = formData[fieldKey] || '';
+      const error = validateField(fieldKey, value);
+      if (error) {
+        errors[field] = error;
+      }
+    });
+
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
   // Handle form input changes
   const handleInputChange = (field: keyof ProfileUpdateData, value: string) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
+
+    // Clear validation error for this field when user starts typing
+    if (validationErrors[field]) {
+      setValidationErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+
+    // Real-time validation for better UX
+    setTimeout(() => {
+      const error = validateField(field, value);
+      if (error) {
+        setValidationErrors(prev => ({
+          ...prev,
+          [field]: error
+        }));
+      }
+    }, 500); // Debounce validation
   };
 
   // Handle profile picture upload
@@ -109,7 +210,10 @@ export default function SettingsPage() {
         const updatedProfile = { ...profileData, profile_picture: result.profile_picture_url };
         setProfileData(updatedProfile);
         
-        // Update auth context
+        // Update auth context to propagate changes to all components
+        updateUser(updatedProfile);
+        
+        // Also update local storage tokens if available
         const tokens = {
           access: localStorage.getItem('accessToken') || '',
           refresh: localStorage.getItem('refreshToken') || ''
@@ -136,12 +240,31 @@ export default function SettingsPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate form before submission
+    if (!validateForm()) {
+      setMessage({ type: 'error', text: 'Please fix the validation errors before submitting.' });
+      return;
+    }
+    
     try {
       setSaving(true);
-      const updatedProfile = await userAPI.updateProfile(formData);
+      setMessage(null);
+      
+      // Only send fields that have values (for partial updates)
+      const updateData: ProfileUpdateData = {};
+      Object.entries(formData).forEach(([key, value]) => {
+        if (value && value.trim() !== '') {
+          updateData[key as keyof ProfileUpdateData] = value.trim();
+        }
+      });
+      
+      const updatedProfile = await userAPI.updateProfile(updateData);
       setProfileData(updatedProfile);
       
       // Update auth context with new data
+      updateUser(updatedProfile);
+      
+      // Also update local storage tokens if available
       const tokens = {
         access: localStorage.getItem('accessToken') || '',
         refresh: localStorage.getItem('refreshToken') || ''
@@ -151,9 +274,27 @@ export default function SettingsPage() {
       }
       
       setMessage({ type: 'success', text: 'Profile updated successfully!' });
-    } catch (err) {
+    } catch (err: unknown) {
       console.error('Failed to update profile:', err);
-      setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+      
+      // Handle backend validation errors
+      if (err && typeof err === 'object' && 'response' in err) {
+        const axiosError = err as { response?: { data?: { details?: Record<string, string[]>; error?: string } } };
+        if (axiosError.response?.data?.details) {
+          const backendErrors: Record<string, string> = {};
+          Object.entries(axiosError.response.data.details).forEach(([field, errors]) => {
+            if (Array.isArray(errors) && errors.length > 0) {
+              backendErrors[field] = errors[0];
+            }
+          });
+          setValidationErrors(backendErrors);
+          setMessage({ type: 'error', text: 'Please fix the validation errors.' });
+        } else {
+          setMessage({ type: 'error', text: axiosError.response?.data?.error || 'Failed to update profile. Please try again.' });
+        }
+      } else {
+        setMessage({ type: 'error', text: 'Failed to update profile. Please try again.' });
+      }
     } finally {
       setSaving(false);
     }
@@ -340,9 +481,28 @@ export default function SettingsPage() {
 
               {/* Personal Information Section */}
               <div className="bg-white border border-zinc-200 rounded-lg shadow-sm p-6">
-                <h2 className="text-lg font-medium text-zinc-900 mb-6">
-                  Personal Information
-                </h2>
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h2 className="text-lg font-medium text-zinc-900">
+                      Personal Information
+                    </h2>
+                    <p className="text-sm text-zinc-500 mt-1">
+                      Fields marked with * are required
+                    </p>
+                  </div>
+                  {Object.keys(validationErrors).length > 0 && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <p className="text-sm text-red-800 font-medium mb-1">
+                        Please fix the following errors:
+                      </p>
+                      <ul className="text-sm text-red-700 space-y-1">
+                        {Object.entries(validationErrors).map(([field, error]) => (
+                          <li key={field}>• {error}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
 
                 <div className="space-y-6">
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -357,9 +517,12 @@ export default function SettingsPage() {
                         id="firstName"
                         value={formData.first_name}
                         onChange={(e) => handleInputChange('first_name', e.target.value)}
-                        className="border-zinc-200"
+                        className={`border-zinc-200 ${validationErrors.first_name ? 'border-red-300 focus:border-red-500' : ''}`}
                         required
                       />
+                      {validationErrors.first_name && (
+                        <p className="text-sm text-red-600 mt-1">{validationErrors.first_name}</p>
+                      )}
                     </div>
 
                     <div className="space-y-2">
@@ -373,9 +536,12 @@ export default function SettingsPage() {
                         id="lastName"
                         value={formData.last_name}
                         onChange={(e) => handleInputChange('last_name', e.target.value)}
-                        className="border-zinc-200"
+                        className={`border-zinc-200 ${validationErrors.last_name ? 'border-red-300 focus:border-red-500' : ''}`}
                         required
                       />
+                      {validationErrors.last_name && (
+                        <p className="text-sm text-red-600 mt-1">{validationErrors.last_name}</p>
+                      )}
                     </div>
                   </div>
 
@@ -410,9 +576,15 @@ export default function SettingsPage() {
                       type="tel"
                       value={formData.phone_number}
                       onChange={(e) => handleInputChange('phone_number', e.target.value)}
-                      className="border-zinc-200"
+                      className={`border-zinc-200 ${validationErrors.phone_number ? 'border-red-300 focus:border-red-500' : ''}`}
                       placeholder="+1 (555) 000-0000"
                     />
+                    {validationErrors.phone_number && (
+                      <p className="text-sm text-red-600 mt-1">{validationErrors.phone_number}</p>
+                    )}
+                    <p className="text-xs text-zinc-500">
+                      Optional - Include country code for international numbers
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -426,9 +598,15 @@ export default function SettingsPage() {
                       id="address"
                       value={formData.address}
                       onChange={(e) => handleInputChange('address', e.target.value)}
-                      className="border-zinc-200"
+                      className={`border-zinc-200 ${validationErrors.address ? 'border-red-300 focus:border-red-500' : ''}`}
                       placeholder="Your address"
                     />
+                    {validationErrors.address && (
+                      <p className="text-sm text-red-600 mt-1">{validationErrors.address}</p>
+                    )}
+                    <p className="text-xs text-zinc-500">
+                      Optional - Helps {profile.role === 'worker' ? 'clients find local workers' : 'find nearby opportunities'}
+                    </p>
                   </div>
 
                   <div className="space-y-2">
@@ -443,8 +621,14 @@ export default function SettingsPage() {
                       type="date"
                       value={formData.date_of_birth}
                       onChange={(e) => handleInputChange('date_of_birth', e.target.value)}
-                      className="border-zinc-200"
+                      className={`border-zinc-200 ${validationErrors.date_of_birth ? 'border-red-300 focus:border-red-500' : ''}`}
                     />
+                    {validationErrors.date_of_birth && (
+                      <p className="text-sm text-red-600 mt-1">{validationErrors.date_of_birth}</p>
+                    )}
+                    <p className="text-xs text-zinc-500">
+                      Optional - helps personalize your experience
+                    </p>
                   </div>
                 </div>
               </div>

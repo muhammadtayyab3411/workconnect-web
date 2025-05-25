@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   Select,
   SelectContent,
@@ -31,111 +32,11 @@ import {
   HardHat,
   Paintbrush,
   Cable,
+  Loader2,
+  AlertCircle,
 } from "lucide-react";
 import { RoleGuard } from "@/lib/role-guard";
-
-// Mock worker data
-const workers = [
-  {
-    id: 1,
-    name: "Michael Anderson",
-    occupation: "Electrician",
-    rating: 4.8,
-    reviews: 35,
-    location: "San Francisco, CA",
-    price: "$45/hr",
-    availableNow: true,
-    verified: true,
-    backgroundCheck: true,
-    skills: ["Wiring", "Installation", "Maintenance"],
-    bio: "Certified electrician with 8+ years of experience in residential and commercial installations.",
-    image: "/images/pricing/profiles/sarah-profile.jpg"
-  },
-  {
-    id: 2,
-    name: "Sarah Johnson",
-    occupation: "Plumber",
-    rating: 4.9,
-    reviews: 42,
-    location: "Los Angeles, CA",
-    price: "$55/hr",
-    availableNow: true,
-    verified: true,
-    backgroundCheck: true,
-    skills: ["Emergency Repair", "Installation", "Renovation"],
-    bio: "Master plumber specializing in emergency repairs and bathroom renovations.",
-    image: "/images/user2.jpg"
-  },
-  {
-    id: 3,
-    name: "David Wilson",
-    occupation: "Construction Worker",
-    rating: 4.7,
-    reviews: 28,
-    location: "Chicago, IL",
-    price: "$38/hr",
-    availableNow: false,
-    verified: true,
-    backgroundCheck: false,
-    skills: ["Carpentry", "Framing", "Renovation"],
-    bio: "Experienced in residential construction with focus on sustainable building practices.",
-    image: "/images/user3.jpg"
-  },
-  {
-    id: 4,
-    name: "Emily Brown",
-    occupation: "Painter",
-    rating: 4.6,
-    reviews: 31,
-    location: "Seattle, WA",
-    price: "$35/hr",
-    availableNow: true,
-    verified: true,
-    backgroundCheck: true,
-    skills: ["Interior", "Exterior", "Decorative"],
-    bio: "Professional painter with expertise in interior and exterior painting.",
-    image: "/images/user4.jpg"
-  },
-  {
-    id: 5,
-    name: "James Martinez",
-    occupation: "Driver",
-    rating: 4.9,
-    reviews: 56,
-    location: "Miami, FL",
-    price: "$30/hr",
-    availableNow: false,
-    verified: true,
-    backgroundCheck: true,
-    skills: ["Commercial", "Delivery", "Transport"],
-    bio: "Professional driver with clean record and experience in various vehicle types.",
-    image: "/images/avatars/sarah-wilson-large.jpg"
-  },
-  {
-    id: 6,
-    name: "Lisa Thompson",
-    occupation: "Electrician",
-    rating: 4.7,
-    reviews: 39,
-    location: "Austin, TX",
-    price: "$48/hr",
-    availableNow: true,
-    verified: true,
-    backgroundCheck: true,
-    skills: ["Smart Home", "Repairs", "Upgrades"],
-    bio: "Specialized in smart home installations and electrical system upgrades.",
-    image: "/images/testimonials/sarah-johnson.jpg"
-  }
-];
-
-// Category data with counts
-const categories = [
-  { name: "Plumbing", count: 45, icon: <Wrench /> },
-  { name: "Driving", count: 78, icon: <Truck /> },
-  { name: "Construction", count: 56, icon: <HardHat /> },
-  { name: "Painting", count: 34, icon: <Paintbrush /> },
-  { name: "Electrical", count: 67, icon: <Cable /> }
-];
+import { workersAPI, Worker, WorkerCategory } from "@/lib/api";
 
 export default function BrowseWorkersPage() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -145,24 +46,49 @@ export default function BrowseWorkersPage() {
   const [selectedRating, setSelectedRating] = useState<string | undefined>(undefined);
   const [selectedAvailability, setSelectedAvailability] = useState<string | undefined>(undefined);
   const [sortBy, setSortBy] = useState<string | undefined>(undefined);
+  
+  // API state
+  const [workers, setWorkers] = useState<Worker[]>([]);
+  const [categories, setCategories] = useState<WorkerCategory[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [totalCount, setTotalCount] = useState(0);
 
-  // Filter workers based on search and filters
-  const filteredWorkers = workers.filter(worker => {
-    const matchesSearch = searchQuery === "" || 
-      worker.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      worker.occupation.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      worker.bio.toLowerCase().includes(searchQuery.toLowerCase());
-    
-    const matchesCategory = !selectedCategory || worker.occupation.includes(selectedCategory);
-    const matchesLocation = !selectedLocation || worker.location.includes(selectedLocation);
-    const matchesVerified = !showVerifiedOnly || worker.verified;
-    const matchesRating = !selectedRating || worker.rating >= parseFloat(selectedRating);
-    const matchesAvailability = !selectedAvailability || 
-      (selectedAvailability === "available" ? worker.availableNow : true);
-    
-    return matchesSearch && matchesCategory && matchesLocation && 
-           matchesVerified && matchesRating && matchesAvailability;
-  });
+  // Load workers on component mount and when filters change
+  useEffect(() => {
+    loadWorkers();
+  }, [searchQuery, selectedCategory, selectedLocation, showVerifiedOnly, selectedRating, selectedAvailability, sortBy]);
+
+  const loadWorkers = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+      
+      const filters = {
+        search: searchQuery || undefined,
+        category: selectedCategory || undefined,
+        location: selectedLocation || undefined,
+        verified_only: showVerifiedOnly || undefined,
+        min_rating: selectedRating || undefined,
+        available_only: selectedAvailability === "available" || undefined,
+        sort_by: sortBy || undefined,
+      };
+
+      const response = await workersAPI.getWorkers(filters);
+      setWorkers(response.workers);
+      setCategories(response.categories);
+      setTotalCount(response.total_count);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to load workers';
+      setError(errorMessage);
+      console.error('Error loading workers:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Filter workers (now done on backend, but keeping for UI consistency)
+  const filteredWorkers = workers;
 
   return (
     <RoleGuard allowedRoles={['client']}>
@@ -293,7 +219,7 @@ export default function BrowseWorkersPage() {
               Available Workers
             </h2>
             <p className="text-zinc-500 text-sm">
-              {filteredWorkers.length} workers available in your area
+              {totalCount} workers available in your area
             </p>
           </div>
           <div className="flex flex-wrap gap-6 mt-4 md:mt-0">
@@ -304,7 +230,11 @@ export default function BrowseWorkersPage() {
                 onClick={() => setSelectedCategory(category.name)}
               >
                 <div className="p-2 rounded-lg cursor-pointer text-zinc-600 hover:text-zinc-900">
-                  {category.icon}
+                  {category.icon === 'Wrench' && <Wrench />}
+                  {category.icon === 'Truck' && <Truck />}
+                  {category.icon === 'HardHat' && <HardHat />}
+                  {category.icon === 'Paintbrush' && <Paintbrush />}
+                  {category.icon === 'Cable' && <Cable />}
                 </div>
                 <span className="text-sm font-medium">{category.name}</span>
                 <span className="text-xs text-zinc-500">{category.count}</span>
@@ -315,7 +245,18 @@ export default function BrowseWorkersPage() {
 
         {/* Workers Grid */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {filteredWorkers.length > 0 ? (
+          {loading ? (
+            <div className="col-span-full text-center py-10">
+              <Loader2 className="animate-spin w-8 h-8 text-zinc-500" />
+            </div>
+          ) : error ? (
+            <div className="col-span-full text-center py-10">
+              <Alert className="bg-red-100 border-red-400 text-red-700">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            </div>
+          ) : filteredWorkers.length > 0 ? (
             filteredWorkers.map((worker) => (
               <Card
                 key={worker.id}

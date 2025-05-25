@@ -23,6 +23,7 @@ interface AuthContextType {
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   loginWithTokens: (tokens: { access: string; refresh: string }, user: UserProfile) => Promise<void>;
+  updateUser: (userData: UserProfile) => void;
   register: (userData: {
     email: string;
     password: string;
@@ -76,8 +77,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             console.log('Auth context: Found token, fetching profile...');
             // If we have NextAuth session with Django user data, use that first
             if (session?.djangoUser) {
-              console.log('Auth context: Using NextAuth Django user data:', session.djangoUser);
-              setUser(session.djangoUser);
+              console.log('Auth context: Found NextAuth Django user data, but fetching complete profile from API...');
+              // Fetch complete profile from API instead of using incomplete session data
+              const userData = await userAPI.getProfile();
+              console.log('Auth context: Complete profile fetched successfully:', userData);
+              setUser(userData);
             } else {
               // Fallback to fetching from API
               const userData = await userAPI.getProfile();
@@ -270,6 +274,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Function to update user data (useful for profile updates)
+  const updateUser = (userData: UserProfile) => {
+    console.log('Auth context: Updating user data:', userData);
+    setUser(userData);
+  };
+
   // Logout function
   const logout = () => {
     try {
@@ -298,6 +308,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     error,
     login,
     loginWithTokens,
+    updateUser,
     register,
     logout
   };
