@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Image from "next/image";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -15,10 +16,12 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { use } from "react";
 import { jobBidsAPI, JobBidsResponse, JobBidder } from "@/lib/api";
+import { chatAPI } from "@/lib/chat-api";
 import { RoleGuard } from "@/lib/role-guard";
 
 export default function BidsReceivedPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
+  const router = useRouter();
   
   // State management
   const [jobBids, setJobBids] = useState<JobBidsResponse | null>(null);
@@ -27,6 +30,7 @@ export default function BidsReceivedPage({ params }: { params: Promise<{ id: str
   const [searchTerm, setSearchTerm] = useState("");
   const [sortBy, setSortBy] = useState("Most Recent");
   const [filteredBidders, setFilteredBidders] = useState<JobBidder[]>([]);
+  const [startingChat, setStartingChat] = useState<string | null>(null);
 
   // Load job bids data on component mount
   useEffect(() => {
@@ -103,6 +107,27 @@ export default function BidsReceivedPage({ params }: { params: Promise<{ id: str
       const errorMessage = err instanceof Error ? err.message : 'Failed to accept bid';
       setError(errorMessage);
       console.error('Error accepting bid:', err);
+    }
+  };
+
+  const handleStartChat = async (workerId: number) => {
+    try {
+      setStartingChat(workerId.toString());
+      
+      // Create or find existing conversation
+      const conversation = await chatAPI.createConversation({
+        participant_ids: [workerId],
+        job: id
+      });
+      
+      // Redirect to messages page with the conversation
+      router.push(`/dashboard/messages?conversation=${conversation.id}`);
+    } catch (err: unknown) {
+      const errorMessage = err instanceof Error ? err.message : 'Failed to start conversation';
+      setError(errorMessage);
+      console.error('Error starting chat:', err);
+    } finally {
+      setStartingChat(null);
     }
   };
 
@@ -375,11 +400,17 @@ export default function BidsReceivedPage({ params }: { params: Promise<{ id: str
                       variant="outline"
                       size="sm"
                       className="border-zinc-200 text-zinc-900 flex-1"
-                      asChild
+                      onClick={() => handleStartChat(bidder.worker_id)}
+                      disabled={startingChat === bidder.worker_id.toString()}
                     >
-                      <Link href={`/dashboard/messages?user=${bidder.worker_id}`}>
-                        Message
-                      </Link>
+                      {startingChat === bidder.worker_id.toString() ? (
+                        <>
+                          <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                          Starting...
+                        </>
+                      ) : (
+                        'Message'
+                      )}
                     </Button>
                   </div>
                   {bidder.status === 'pending' ? (
