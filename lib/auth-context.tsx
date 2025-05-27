@@ -243,9 +243,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         
         console.log('Auth context: Navigating to dashboard...');
         // Use a small delay to ensure state is updated before navigation
-        setTimeout(() => {
-          router.push('/dashboard');
-        }, 50);
+        // setTimeout(() => {
+        //   router.push('/dashboard');  // Commented out to let signup page handle redirect
+        // }, 50);
       } else {
         setIsLoading(false);
       }

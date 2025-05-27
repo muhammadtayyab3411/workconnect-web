@@ -1,25 +1,22 @@
 "use client"
 
-import { useState } from "react";
-import { Header, Footer } from "@/components/common";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Check, 
-  ChevronDown, 
-  TrendingUp, 
-  Bell, 
-  MessageSquare, 
-  BadgeCheck, 
-  Headphones,
-  StarIcon
-} from "lucide-react";
+import React, { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth-context';
+import { paymentAPI, SubscriptionPlan } from '@/lib/payment-api';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Check, TrendingUp, ChevronDown, Bell, MessageSquare, StarIcon, Headphones } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Header, Footer } from '@/components/common';
 import Image from "next/image";
-import { motion, AnimatePresence } from "framer-motion";
 
 export default function Pricing() {
   const [activeTab, setActiveTab] = useState("clients");
   const [activeFaq, setActiveFaq] = useState<string | null>(null);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlan[]>([]);
+  const router = useRouter();
+  const { user } = useAuth();
 
   const toggleFaq = (id: string) => {
     if (activeFaq === id) {
@@ -27,6 +24,52 @@ export default function Pricing() {
     } else {
       setActiveFaq(id);
     }
+  };
+
+  useEffect(() => {
+    fetchSubscriptionPlans();
+  }, []);
+
+  const fetchSubscriptionPlans = async () => {
+    try {
+      const plans = await paymentAPI.getSubscriptionPlans();
+      setSubscriptionPlans(plans);
+    } catch (error) {
+      console.error('Failed to fetch subscription plans:', error);
+    }
+  };
+
+  const handlePlanSelection = (planName: string, billingCycle: 'monthly' | 'yearly') => {
+    // Find the plan in our fetched data
+    const plan = subscriptionPlans.find(p => p.name === planName);
+    
+    if (!plan) {
+      console.error('Plan not found:', planName);
+      return;
+    }
+
+    // Check if user is authenticated
+    if (!user) {
+      // Redirect to signup if not authenticated
+      router.push('/auth/signup');
+      return;
+    }
+
+    // Store plan selection for checkout
+    const planSelection = {
+      planId: plan.id,
+      planName: plan.name,
+      billingCycle,
+      price: billingCycle === 'monthly' ? plan.price_monthly : plan.price_yearly,
+      userType: activeTab
+    };
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('pendingSubscription', JSON.stringify(planSelection));
+    }
+
+    // Redirect to checkout
+    router.push('/checkout');
   };
 
   // Pricing plan data for clients and workers
@@ -227,7 +270,11 @@ export default function Pricing() {
                         transition={{ duration: 0.3 }}
                         className="mt-auto"
                       >
-                        <Button variant={activePricingData.basic.ctaVariant} className="w-full py-6 text-base">
+                        <Button 
+                          variant={activePricingData.basic.ctaVariant} 
+                          className="w-full py-6 text-base"
+                          onClick={() => handlePlanSelection('Starter', 'monthly')}
+                        >
                           {activePricingData.basic.cta}
                         </Button>
                       </motion.div>
@@ -300,7 +347,10 @@ export default function Pricing() {
                         transition={{ duration: 0.3 }}
                         className="mt-auto"
                       >
-                        <Button className="w-full py-6 text-base bg-zinc-900 hover:bg-zinc-800">
+                        <Button 
+                          className="w-full py-6 text-base bg-zinc-900 hover:bg-zinc-800"
+                          onClick={() => handlePlanSelection('Professional', 'monthly')}
+                        >
                           {activePricingData.pro.cta}
                         </Button>
                       </motion.div>
@@ -370,7 +420,11 @@ export default function Pricing() {
                         transition={{ duration: 0.3 }}
                         className="mt-auto"
                       >
-                        <Button variant={activePricingData.enterprise.ctaVariant} className="w-full py-6 text-base">
+                        <Button 
+                          variant={activePricingData.enterprise.ctaVariant} 
+                          className="w-full py-6 text-base"
+                          onClick={() => handlePlanSelection('Enterprise', 'monthly')}
+                        >
                           {activePricingData.enterprise.cta}
                         </Button>
                       </motion.div>
@@ -426,7 +480,7 @@ export default function Pricing() {
               <Card className="border-zinc-200 shadow-sm">
                 <CardContent className="p-6">
                   <div className="w-12 h-12 flex items-center justify-center rounded-md bg-zinc-100 mb-6">
-                    <BadgeCheck className="w-6 h-6 text-zinc-900" />
+                    <Check className="w-6 h-6 text-zinc-900" />
                   </div>
                   <h3 className="text-xl font-semibold mb-2">Verified Status</h3>
                   <p className="text-zinc-600">

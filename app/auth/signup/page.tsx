@@ -19,7 +19,7 @@ interface ErrorResponse {
   password?: string | string[];
   non_field_errors?: string | string[];
   [key: string]: unknown;
-}
+      }
 
 // Create a schema that matches Django's validation requirements
 const signupSchema = z.object({
@@ -42,24 +42,24 @@ const signupSchema = z.object({
     }, 'This password is too common'),
   accountType: z.enum(['client', 'provider'], {
     required_error: 'Please select an account type',
-  }),
-});
+        }),
+      });
 
 type SignupFormValues = z.infer<typeof signupSchema>;
 
 export default function SignupPage() {
-  const { register: registerUser, error: authError, isLoading } = useAuth();
-  const [serverError, setServerError] = useState<string | null>(null);
-  const [socialLoading, setSocialLoading] = useState<string | null>(null);
-  const [verificationRequired, setVerificationRequired] = useState<{ email: string; message: string } | null>(null);
-  const router = useRouter();
+        const { register: registerUser, error: authError, isLoading } = useAuth();
+        const [serverError, setServerError] = useState<string | null>(null);
+        const [socialLoading, setSocialLoading] = useState<string | null>(null);
+        const [verificationRequired, setVerificationRequired] = useState<{ email: string; message: string } | null>(null);
+        const router = useRouter();
   
-  const {
+        const {
     register,
     handleSubmit,
     setError,
     formState: { errors },
-  } = useForm<SignupFormValues>({
+        } = useForm<SignupFormValues>({
     resolver: zodResolver(signupSchema),
     defaultValues: {
       fullName: '',
@@ -67,9 +67,9 @@ export default function SignupPage() {
       password: '',
       accountType: undefined,
     }
-  });
+        });
 
-  const onSubmit = async (data: SignupFormValues) => {
+        const onSubmit = async (data: SignupFormValues) => {
     setServerError(null);
     setVerificationRequired(null);
     
@@ -100,16 +100,15 @@ export default function SignupPage() {
         return;
       }
 
-      // If no verification required, user should be logged in automatically
-      // This would happen for social logins or if verification is disabled
-      router.push('/dashboard');
+      // Simple redirect to checkout after successful signup
+      router.push('/checkout');
       
-    } catch (err: unknown) {
-      console.error('Signup error:', err);
+    } catch (error) {
+      console.error('Signup error:', error);
       
       // Handle known server validation errors and map them to form fields
-      if (axios.isAxiosError(err)) {
-        const serverErrors = (err as AxiosError<ErrorResponse>).response?.data;
+      if (axios.isAxiosError(error)) {
+        const serverErrors = (error as AxiosError<ErrorResponse>).response?.data;
         
         if (serverErrors?.email) {
           setError('email', { 
@@ -140,25 +139,27 @@ export default function SignupPage() {
         setServerError('An unexpected error occurred. Please try again.');
       }
     }
-  };
+        };
 
-  const handleSocialSignup = async (provider: string) => {
-    try {
-      setSocialLoading(provider);
-      
-      if (provider === 'google') {
-        // Redirect to role selection page before Google OAuth
-        router.push(`/auth/role-selection?provider=google`);
-      } else if (provider === 'facebook') {
-        setServerError('Facebook login not implemented yet.');
-      }
-    } catch (error) {
-      console.error(`${provider} signup error:`, error);
-      setServerError(`Error signing up with ${provider}. Please try again.`);
-    } finally {
-      setSocialLoading(null);
-    }
-  };
+        const handleSocialSignup = async (provider: string) => {
+          try {
+            setSocialLoading(provider);
+
+            if (provider === "google") {
+              // Redirect to role selection page before Google OAuth
+              router.push(`/auth/role-selection?provider=google`);
+            } else if (provider === "facebook") {
+              setServerError("Facebook login not implemented yet.");
+            }
+          } catch (error) {
+            console.error(`${provider} signup error:`, error);
+            setServerError(
+              `Error signing up with ${provider}. Please try again.`
+            );
+          } finally {
+            setSocialLoading(null);
+          }
+        };
 
   return (
     <>
@@ -438,4 +439,4 @@ export default function SignupPage() {
       </main>
     </>
   );
-} 
+      } 

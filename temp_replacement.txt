@@ -1,0 +1,12 @@
+// Check if there's a pending subscription from pricing page
+if (typeof window !== 'undefined') {
+  const pendingSubscription = sessionStorage.getItem('pendingSubscription');
+  if (pendingSubscription) {
+    // User came from pricing page with a plan selected, redirect to checkout
+    router.push('/checkout');
+    return;
+  }
+}
+
+// No pending subscription, redirect to pricing page to select a plan
+router.push('/pricing'); 
