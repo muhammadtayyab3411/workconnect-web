@@ -1,18 +1,20 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { Search, Paperclip, Send, MessageSquare, CheckCircle } from "lucide-react";
+import { Search, Paperclip, Send, MessageSquare, CheckCircle, Download, FileText } from "lucide-react";
 import Image from "next/image";
 import { chatAPI, Conversation, ConversationDetail, ChatMessage } from "@/lib/chat-api";
 import { useWebSocket } from "@/lib/hooks/useWebSocket";
 import { useGlobalNotifications, GlobalNotification } from "@/lib/hooks/useGlobalNotifications";
+import { useGlobalMessages } from "@/lib/hooks/useGlobalMessages";
 import { useAuth } from "@/lib/auth-context";
 
 export default function MessagesPage() {
   const { user } = useAuth();
+  const { refreshUnreadCount } = useGlobalMessages();
   const searchParams = useSearchParams();
   const router = useRouter();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -24,7 +26,9 @@ export default function MessagesPage() {
   const [loading, setLoading] = useState(true);
   const [authToken, setAuthToken] = useState<string | undefined>(undefined);
   const [onlineUsers, setOnlineUsers] = useState<Set<number>>(new Set()); // Track online users
+  const [creatingConversation, setCreatingConversation] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   // Presence WebSocket for real-time online status
   const presenceWs = useRef<WebSocket | null>(null);
@@ -97,16 +101,17 @@ export default function MessagesPage() {
           return conv;
         })
       );
+      
+      // Refresh global unread count
+      refreshUnreadCount();
     }
   });
 
   // Connect to presence WebSocket when user is authenticated
   useEffect(() => {
     if (authToken && user) {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
-      const wsHost = apiUrl.replace(/^https?:\/\//, '').replace('/api', '');
-      const presenceUrl = `${wsProtocol}://${wsHost}/ws/presence/?token=${authToken}`;
+      // WebSocket server runs on port 8000 (Daphne), API server on port 8001
+      const presenceUrl = `ws://localhost:8000/ws/presence/?token=${authToken}`;
       
       console.log('Connecting to presence WebSocket:', presenceUrl);
       const ws = new WebSocket(presenceUrl);
@@ -159,13 +164,166 @@ export default function MessagesPage() {
     loadConversations();
   }, []);
 
-  // Handle URL parameters for auto-selecting conversations
+  const selectConversation = async (conversationId: string) => {
+    try {
+      const conversation = await chatAPI.getConversation(conversationId);
+      setSelectedConversation(conversation);
+      setMessages(conversation.messages || []);
+      
+      // Mark messages as read
+      if (conversation.messages?.length > 0) {
+        await chatAPI.markAsRead(conversationId);
+        // Refresh global unread count after marking as read
+        refreshUnreadCount();
+      }
+    } catch (error) {
+      console.error('Error loading conversation:', error);
+    }
+  };
+
+  // Function to handle the 'user' URL parameter
+  const handleUserParameter = useCallback(async (targetUserId: number, currentConversations: Conversation[]) => {
+    console.log('🔧 handleUserParameter called with:', targetUserId, 'current user:', user?.id);
+    
+    if (!user || targetUserId === user.id) {
+      console.log('❌ Skipping - no user or same user');
+      return;
+    }
+    
+    console.log('🔄 Setting creatingConversation to true');
+    setCreatingConversation(true);
+    
+    try {
+      // First, check if a conversation already exists with this user
+      const existingConversation = currentConversations.find(conv => 
+        conv.participants.some(p => p.id === targetUserId)
+      );
+      
+      console.log('🔍 Existing conversation check:', existingConversation ? existingConversation.id : 'none found');
+      
+      if (existingConversation) {
+        // Select existing conversation
+        console.log('✅ Selecting existing conversation:', existingConversation.id);
+        await selectConversation(existingConversation.id);
+        // Update URL to reflect the conversation
+        router.replace(`/dashboard/messages?conversation=${existingConversation.id}`);
+      } else {
+        // Create new conversation
+        console.log('🆕 Creating new conversation with user:', targetUserId);
+        
+        try {
+          const newConversation = await chatAPI.createConversation({
+            participant_ids: [targetUserId]
+          });
+          
+          console.log('✅ New conversation created:', newConversation.id);
+          
+          // Reload conversations to include the new one
+          console.log('🔄 Reloading conversations...');
+          await loadConversations();
+          
+          // Select the new conversation
+          console.log('📞 Selecting new conversation:', newConversation.id);
+          await selectConversation(newConversation.id);
+          
+          // Update URL to reflect the conversation
+          router.replace(`/dashboard/messages?conversation=${newConversation.id}`);
+          
+        } catch (apiError) {
+          console.error('❌ API Error creating conversation:', apiError);
+          if (apiError instanceof Error) {
+            console.error('Error message:', apiError.message);
+          }
+          // Try to get more details from the error response
+          if (apiError && typeof apiError === 'object' && 'response' in apiError) {
+            const errorResponse = apiError as { response?: { data?: unknown; status?: number } };
+            console.error('API Response:', errorResponse.response?.data);
+            console.error('API Status:', errorResponse.response?.status);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ General error in handleUserParameter:', error);
+    } finally {
+      console.log('🔄 Setting creatingConversation to false');
+      setCreatingConversation(false);
+    }
+  }, [user, router]);
+
+  // Handle URL parameters for auto-selecting conversations or creating new ones
   useEffect(() => {
     const conversationId = searchParams.get('conversation');
+    const userId = searchParams.get('user');
+    
+    console.log('🔍 URL Parameters Effect Running:', { 
+      conversationId, 
+      userId, 
+      conversationsLength: conversations.length, 
+      userExists: !!user,
+      currentUserId: user?.id, 
+      creatingConversation,
+      searchParamsString: searchParams.toString()
+    });
+    
+    // Handle conversation ID parameter
     if (conversationId && conversations.length > 0) {
+      console.log('📞 Selecting conversation by ID:', conversationId);
       selectConversation(conversationId);
+      return;
     }
-  }, [searchParams, conversations]);
+    
+    // Handle user ID parameter
+    if (userId && conversations.length > 0 && user && !creatingConversation) {
+      console.log('👤 Handling user parameter:', userId);
+      const targetUserId = parseInt(userId);
+      if (!isNaN(targetUserId)) {
+        handleUserParameter(targetUserId, conversations);
+      } else {
+        console.error('❌ Invalid user ID:', userId);
+      }
+      return;
+    }
+    
+    // Log why no action was taken
+    if (!userId && !conversationId) {
+      console.log('ℹ️ No URL parameters to handle');
+    } else if (!conversations.length) {
+      console.log('⏳ Waiting for conversations to load...');
+    } else if (!user) {
+      console.log('⏳ Waiting for user authentication...');
+    } else if (creatingConversation) {
+      console.log('🔄 Already creating conversation...');
+    }
+  }, [searchParams, conversations, user, creatingConversation, handleUserParameter]);
+
+  // Additional effect to handle URL parameters when both user and conversations are ready
+  useEffect(() => {
+    const userId = searchParams.get('user');
+    
+    console.log('🚀 Secondary URL parameter handler check:', {
+      hasUserId: !!userId,
+      hasUser: !!user,
+      userLoaded: !!user?.id,
+      conversationsLoaded: conversations.length > 0,
+      notCreating: !creatingConversation,
+      noSelectedConversation: !selectedConversation,
+      loading
+    });
+    
+    // Only run this effect if we have a user parameter and both user and conversations are loaded
+    if (userId && user?.id && conversations.length > 0 && !creatingConversation && !selectedConversation && !loading) {
+      console.log('🚀 All conditions met - executing handleUserParameter');
+      const targetUserId = parseInt(userId);
+      if (!isNaN(targetUserId) && targetUserId !== user.id) {
+        console.log('🎯 Calling handleUserParameter with:', targetUserId);
+        handleUserParameter(targetUserId, conversations);
+      } else {
+        console.log('❌ Invalid user ID or same as current user:', { targetUserId, currentUserId: user.id });
+      }
+    } else {
+      console.log('⏳ Waiting for conditions to be met...');
+    }
+  }, [user, conversations, searchParams, creatingConversation, selectedConversation, handleUserParameter, loading]);
 
   // Connect to WebSocket when conversation is selected
   useEffect(() => {
@@ -221,21 +379,6 @@ export default function MessagesPage() {
     }
   };
 
-  const selectConversation = async (conversationId: string) => {
-    try {
-      const conversation = await chatAPI.getConversation(conversationId);
-      setSelectedConversation(conversation);
-      setMessages(conversation.messages || []);
-      
-      // Mark messages as read
-      if (conversation.messages?.length > 0) {
-        await chatAPI.markAsRead(conversationId);
-      }
-    } catch (error) {
-      console.error('Error loading conversation:', error);
-    }
-  };
-
   const handleSendMessage = async () => {
     if (!newMessage.trim() || !selectedConversation) return;
 
@@ -248,14 +391,13 @@ export default function MessagesPage() {
         sendMessage(messageContent);
       } else {
         // Fallback to REST API if WebSocket is not connected
-        const newMsg = await chatAPI.sendMessage(selectedConversation.id, {
+        await chatAPI.sendMessage(selectedConversation.id, {
           content: messageContent,
           message_type: 'text'
         });
         
-        // Add the new message to the local state
-        setMessages(prev => [...prev, newMsg]);
-        scrollToBottom();
+        // Note: Don't manually add message to state - WebSocket will broadcast it
+        console.log('✅ Text message sent via REST API - will appear via WebSocket');
       }
     } catch (error) {
       console.error('Error sending message:', error);
@@ -371,20 +513,177 @@ export default function MessagesPage() {
   };
 
   const handleAttachment = () => {
+    if (!selectedConversation) {
+      console.error('No conversation selected');
+      return;
+    }
+
     // Create a file input element and trigger click
     const fileInput = document.createElement('input');
     fileInput.type = 'file';
-    fileInput.accept = 'image/*,application/pdf,.doc,.docx';
-    fileInput.onchange = (e) => {
+    fileInput.accept = 'image/*,application/pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.zip,.rar,.7z';
+    fileInput.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
       if (file) {
-        // Handle file upload here
-        console.log('File selected:', file.name);
-        // You can implement file upload functionality here
-        // For now, just log the file
+        await handleFileUpload(file);
       }
     };
     fileInput.click();
+  };
+
+  const handleFileUpload = async (file: File) => {
+    if (!selectedConversation) return;
+
+    // File size validation (10MB limit)
+    const maxSize = 10 * 1024 * 1024; // 10MB
+    if (file.size > maxSize) {
+      alert('File size too large. Maximum size is 10MB.');
+      return;
+    }
+
+    // File type validation
+    const allowedTypes = [
+      // Images
+      'image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp',
+      // Documents
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      // Text files
+      'text/plain', 'text/csv',
+      // Archives
+      'application/zip', 'application/x-rar-compressed', 'application/x-7z-compressed'
+    ];
+
+    if (!allowedTypes.includes(file.type)) {
+      alert('Invalid file type. Allowed types: images, PDF, Word, Excel, PowerPoint, text files, and archives.');
+      return;
+    }
+
+    console.log('📎 Uploading file:', file.name, 'Size:', (file.size / 1024 / 1024).toFixed(2) + 'MB');
+    setUploadingFile(true);
+
+    try {
+      // Determine message type based on file type
+      let messageType: 'image' | 'file' = 'file';
+      if (file.type.startsWith('image/')) {
+        messageType = 'image';
+      }
+
+      // Create a message with file attachment
+      const messageData = {
+        content: `📎 ${file.name}`, // Show filename as content
+        message_type: messageType,
+        file_attachment: file
+      };
+
+      if (isConnected) {
+        // For WebSocket, we need to use the REST API fallback for file uploads
+        // since WebSocket doesn't handle file uploads directly
+        console.log('🔄 Using REST API for file upload (WebSocket doesn\'t support files)');
+        await chatAPI.sendMessage(selectedConversation.id, messageData);
+        
+        // Note: Don't manually add message to state - WebSocket will broadcast it
+        console.log('✅ File uploaded successfully - message will appear via WebSocket');
+      } else {
+        // Use REST API
+        await chatAPI.sendMessage(selectedConversation.id, messageData);
+        
+        // Note: Don't manually add message to state - WebSocket will broadcast it
+        console.log('✅ File uploaded successfully - message will appear via WebSocket');
+      }
+
+    } catch (error) {
+      console.error('❌ Error uploading file:', error);
+      
+      // Show user-friendly error message
+      let errorMessage = 'Failed to upload file. Please try again.';
+      if (error && typeof error === 'object' && 'response' in error) {
+        const errorResponse = error as { response?: { data?: { error?: string; file_attachment?: string[] } } };
+        if (errorResponse.response?.data?.error) {
+          errorMessage = errorResponse.response.data.error;
+        } else if (errorResponse.response?.data?.file_attachment) {
+          errorMessage = errorResponse.response.data.file_attachment[0];
+        }
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setUploadingFile(false);
+    }
+  };
+
+  // Helper function to render message content based on type
+  const renderMessageContent = (message: ChatMessage, isCurrentUser: boolean) => {
+    const baseClasses = `max-w-[80%] ${isCurrentUser ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-900'} rounded-lg p-3`;
+    
+    if (message.message_type === 'image' && message.file_url) {
+      return (
+        <div className={baseClasses}>
+          <div className="mb-2">
+            <Image
+              src={message.file_url}
+              alt="Shared image"
+              width={300}
+              height={200}
+              className="rounded-lg max-w-full h-auto"
+              style={{ maxHeight: '300px', objectFit: 'contain' }}
+            />
+          </div>
+          {message.content && (
+            <p className="text-sm">{message.content}</p>
+          )}
+          <p className={`text-xs mt-1 ${isCurrentUser ? 'text-zinc-300' : 'text-zinc-500'} opacity-70`}>
+            {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+      );
+    }
+    
+    if (message.message_type === 'file' && message.file_url) {
+      const fileName = message.content.replace('📎 ', '') || 'Download file';
+      
+      return (
+        <div className={baseClasses}>
+          <div className="flex items-center gap-3 mb-2">
+            <div className={`p-2 rounded-lg ${isCurrentUser ? 'bg-zinc-800' : 'bg-zinc-200'}`}>
+              <FileText className={`h-5 w-5 ${isCurrentUser ? 'text-zinc-300' : 'text-zinc-600'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium truncate">{fileName}</p>
+              <a
+                href={message.file_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className={`inline-flex items-center gap-1 text-xs ${
+                  isCurrentUser ? 'text-zinc-300 hover:text-white' : 'text-zinc-600 hover:text-zinc-900'
+                } hover:underline`}
+              >
+                <Download className="h-3 w-3" />
+                Download
+              </a>
+            </div>
+          </div>
+          <p className={`text-xs mt-1 ${isCurrentUser ? 'text-zinc-300' : 'text-zinc-500'} opacity-70`}>
+            {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+          </p>
+        </div>
+      );
+    }
+    
+    // Default text message
+    return (
+      <div className={baseClasses}>
+        <p className="text-sm">{message.content}</p>
+        <p className={`text-xs mt-1 ${isCurrentUser ? 'text-zinc-300' : 'text-zinc-500'} opacity-70`}>
+          {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+        </p>
+      </div>
+    );
   };
 
   if (loading) {
@@ -613,12 +912,7 @@ export default function MessagesPage() {
                     key={message.id}
                     className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'}`}
                   >
-                    <div className={`max-w-[80%] ${isCurrentUser ? 'bg-zinc-900 text-white' : 'bg-zinc-100 text-zinc-900'} rounded-lg p-3`}>
-                      <p className="text-sm">{message.content}</p>
-                      <p className={`text-xs mt-1 ${isCurrentUser ? 'text-zinc-300' : 'text-zinc-500'} opacity-70`}>
-                        {new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </p>
-                    </div>
+                    {renderMessageContent(message, isCurrentUser)}
                   </div>
                 );
               })
@@ -634,6 +928,7 @@ export default function MessagesPage() {
                 size="icon"
                 className="rounded-md border border-zinc-200 h-10 w-10"
                 onClick={handleAttachment}
+                disabled={uploadingFile}
               >
                 <Paperclip className="h-5 w-5 text-zinc-700" />
               </Button>

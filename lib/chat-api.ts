@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Get the base API instance from the main api file
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api';
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api';
 
 // Helper function to get auth token
 const getAuthHeader = (): string | null => {

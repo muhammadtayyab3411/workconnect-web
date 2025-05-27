@@ -70,10 +70,8 @@ export const useGlobalNotifications = (options: UseGlobalNotificationsOptions = 
 
     try {
       // Create WebSocket connection with auth token in URL params
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-      const wsProtocol = apiUrl.startsWith('https') ? 'wss' : 'ws';
-      const wsHost = apiUrl.replace(/^https?:\/\//, '').replace('/api', '');
-      const wsUrl = `${wsProtocol}://${wsHost}/ws/notifications/?token=${tokenRef.current}`;
+      // WebSocket server runs on port 8000 (Daphne), API server on port 8001
+      const wsUrl = `ws://localhost:8000/ws/notifications/?token=${tokenRef.current}`;
       
       console.log('Connecting to Global Notifications WebSocket:', wsUrl);
       const ws = new WebSocket(wsUrl);

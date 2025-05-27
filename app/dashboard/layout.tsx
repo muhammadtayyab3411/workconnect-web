@@ -2,11 +2,13 @@
 
 import { DashboardHeader } from "@/components/common";
 import { useAuth } from "@/lib/auth-context";
+import { useGlobalMessages } from "@/lib/hooks/useGlobalMessages";
 import { redirect } from "next/navigation";
 import { useEffect, useState } from "react";
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth();
+  const { totalUnreadCount } = useGlobalMessages();
   const [isClient, setIsClient] = useState(false);
   const [timeoutReached, setTimeoutReached] = useState(false);
   
@@ -55,12 +57,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const userName = user?.first_name ? `${user.first_name} ${user.last_name || ''}`.trim() : 'User';
   const userImage = user?.profile_picture || "/images/user2.jpg";
   
+  // Debug logging
+  console.log('Layout - totalUnreadCount:', totalUnreadCount, 'type:', typeof totalUnreadCount);
+
   return (
     <div className="min-h-screen bg-white">
       <DashboardHeader 
         userName={userName}
         userImage={userImage}
         notificationCount={5} // This would come from your API in a real app
+        messageCount={0}
       />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {children}

@@ -27,12 +27,14 @@ interface DashboardHeaderProps {
   userName: string;
   userImage?: string;
   notificationCount?: number;
+  messageCount?: number;
 }
 
 export function DashboardHeader({ 
   userName, 
   userImage = "/images/user2.jpg", 
-  notificationCount = 0 
+  notificationCount = 0,
+  messageCount = 0
 }: DashboardHeaderProps) {
   const [showLogoutDialog, setShowLogoutDialog] = useState(false);
   const [isSheetOpen, setIsSheetOpen] = useState(false);
@@ -40,7 +42,7 @@ export function DashboardHeader({
 
   const navItems = [
     { name: "Dashboard", href: "/dashboard", icon: Home },
-    { name: "Messages", href: "/dashboard/messages", icon: MessageSquare },
+    { name: "Messages", href: "/dashboard/messages", icon: MessageSquare, count: messageCount },
     { name: "Notifications", href: "/dashboard/notifications", icon: Bell, count: notificationCount },
     { name: "Profile", href: "/dashboard/profile", icon: User },
     { name: "Settings", href: "/dashboard/settings", icon: Settings },
@@ -80,7 +82,7 @@ export function DashboardHeader({
                         {item.icon && (
                           <div className="relative">
                             <item.icon className={cn("w-5 h-5", isActive && "text-black")} />
-                            {item.count && item.count > 0 && (
+                            {(typeof item.count === 'number' && item.count > 0) && (
                               <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center text-white font-medium">
                                 {item.count > 9 ? '9+' : item.count}
                               </span>
@@ -114,6 +116,7 @@ export function DashboardHeader({
         <div className="hidden md:flex items-center gap-6">
           {navItems.slice(0, 3).map((item) => {
             const isActive = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            
             return (
               <Link 
                 key={item.href}
@@ -142,7 +145,7 @@ export function DashboardHeader({
                 ) : (
                   <div className="relative">
                     <item.icon className={cn("w-5 h-5", isActive && "text-black")} />
-                    {item.count && item.count > 0 && (
+                    {(typeof item.count === 'number' && item.count > 0) && (
                       <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] flex items-center justify-center text-white font-medium">
                         {item.count > 9 ? '9+' : item.count}
                       </span>
