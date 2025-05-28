@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { useSearchParams, useRouter } from 'next/navigation';
@@ -9,7 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Alert } from '@/components/ui/alert';
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [submitted, setSubmitted] = useState(false);
@@ -234,5 +234,57 @@ export default function ResetPasswordPage() {
         </div>
       </footer>
     </div>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <div className="min-h-screen flex flex-col">
+      {/* Custom Auth Header */}
+      <header className="py-4 px-4 md:px-8 border-b border-zinc-200">
+        <div className="container mx-auto max-w-[1200px]">
+          <div className="flex justify-between items-center">
+            <Link href="/" className="font-semibold text-lg text-zinc-900">
+              <Image
+                src="/logo.svg"
+                alt="WorkConnect"
+                width={150}
+                height={30}
+                className="h-8 w-auto"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/logo-fallback.png';
+                }}
+              />
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="w-full flex-1 min-h-0 flex items-center justify-center bg-white">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-4"></div>
+          <p className="text-zinc-600">Loading...</p>
+        </div>
+      </main>
+
+      {/* Custom Footer */}
+      <footer className="w-full border-t border-zinc-200 bg-white py-6 px-4 md:px-8 flex flex-col md:flex-row items-center justify-between text-sm text-zinc-500">
+        <div className="mb-2 md:mb-0">© 2024 JobConnect. All rights reserved.</div>
+        <div className="flex gap-6">
+          <Link href="/terms" className="hover:underline">Terms</Link>
+          <Link href="/privacy" className="hover:underline">Privacy</Link>
+          <Link href="/help" className="hover:underline">Help</Link>
+        </div>
+      </footer>
+    </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 } 

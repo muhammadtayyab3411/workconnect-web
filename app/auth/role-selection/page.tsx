@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { signIn } from "next-auth/react";
 
-export default function RoleSelectionPage() {
+function RoleSelectionForm() {
   const [selectedRole, setSelectedRole] = useState<'client' | 'worker' | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
@@ -233,5 +233,54 @@ export default function RoleSelectionPage() {
         </div>
       </main>
     </>
+  );
+}
+
+function LoadingFallback() {
+  return (
+    <>
+      {/* Header */}
+      <header className="py-4 px-4 md:px-8 border-b border-zinc-200">
+        <div className="container mx-auto max-w-[1200px]">
+          <div className="flex justify-between items-center">
+            <Link href="/" className="font-semibold text-lg text-zinc-900">
+              <Image
+                src="/logo.svg"
+                alt="WorkConnect"
+                width={150}
+                height={30}
+                className="h-8 w-auto"
+                onError={(e) => {
+                  const target = e.target as HTMLImageElement;
+                  target.src = '/logo-fallback.png';
+                }}
+              />
+            </Link>
+            <Link href="/auth/login">
+              <Button variant="outline" className="rounded-md border-zinc-200 hover:bg-zinc-50 text-zinc-800">
+                Login
+              </Button>
+            </Link>
+          </div>
+        </div>
+      </header>
+
+      <main className="min-h-screen bg-gradient-to-b from-zinc-50 to-white flex items-center justify-center p-4">
+        <div className="w-full max-w-4xl mx-auto">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-zinc-900 mx-auto mb-4"></div>
+            <p className="text-zinc-600">Loading...</p>
+          </div>
+        </div>
+      </main>
+    </>
+  );
+}
+
+export default function RoleSelectionPage() {
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <RoleSelectionForm />
+    </Suspense>
   );
 } 
