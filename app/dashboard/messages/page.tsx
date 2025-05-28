@@ -45,66 +45,115 @@ export default function MessagesPage() {
     }
   }, [user]);
 
-  // WebSocket integration
-  const { isConnected, sendMessage, connect, disconnect } = useWebSocket({
-    token: authToken, // Use the state token
-    onMessage: (message: ChatMessage) => {
-      setMessages(prev => [...prev, message]);
-      scrollToBottom();
-    },
-    onMessagesRead: (messageIds: string[]) => {
-      setMessages(prev => 
-        prev.map(msg => 
-          messageIds.includes(msg.id) ? { ...msg, is_read: true } : msg
-        )
+  // Auto-scroll to bottom when new messages arrive or conversation loads
+  const scrollToBottom = useCallback(() => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100); // Small delay to ensure DOM is updated
+  }, []);
+
+  // Stable callback for handling incoming messages
+  const handleIncomingMessage = useCallback((message: ChatMessage) => {
+    console.log('📨 Received message via WebSocket:', message);
+    setMessages(prev => {
+      // Check if this is a real message replacing an optimistic one
+      const optimisticIndex = prev.findIndex(msg => 
+        msg.id.startsWith('temp-') && 
+        msg.content === message.content && 
+        msg.sender.id === message.sender.id
       );
-    },
-    onTyping: (userId: number, userName: string, isTyping: boolean) => {
-      // Handle typing indicators if needed
-      console.log(`${userName} is ${isTyping ? 'typing' : 'stopped typing'}`);
-    },
-    onError: (error: string) => {
-      console.error('WebSocket error:', error);
-    }
+      
+      if (optimisticIndex !== -1) {
+        // Replace optimistic message with real message
+        console.log('🔄 Replacing optimistic message with real message:', message.id);
+        const newMessages = [...prev];
+        newMessages[optimisticIndex] = message;
+        return newMessages;
+      }
+      
+      // Check if message already exists to prevent duplicates
+      const messageExists = prev.some(msg => msg.id === message.id);
+      if (messageExists) {
+        console.log('⚠️ Message already exists, skipping duplicate:', message.id);
+        return prev;
+      }
+      
+      console.log('✅ Adding new message to state:', message.id);
+      return [...prev, message];
+    });
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  // Stable callback for handling read messages
+  const handleMessagesRead = useCallback((messageIds: string[]) => {
+    console.log('📖 Messages marked as read:', messageIds);
+    setMessages(prev => 
+      prev.map(msg => 
+        messageIds.includes(msg.id) ? { ...msg, is_read: true } : msg
+      )
+    );
+  }, []);
+
+  // Stable callback for handling typing indicators
+  const handleTyping = useCallback((userId: number, userName: string, isTyping: boolean) => {
+    console.log(`👤 ${userName} is ${isTyping ? 'typing' : 'stopped typing'}`);
+    // Handle typing indicators if needed
+  }, []);
+
+  // Stable callback for handling WebSocket errors
+  const handleWebSocketError = useCallback((error: string) => {
+    console.error('🔌 WebSocket error:', error);
+  }, []);
+
+  // WebSocket integration with stable callbacks
+  const { isConnected, sendMessage, connect, disconnect } = useWebSocket({
+    token: authToken,
+    onMessage: handleIncomingMessage,
+    onMessagesRead: handleMessagesRead,
+    onTyping: handleTyping,
+    onError: handleWebSocketError
   });
+
+  // Stable callback for handling global notifications
+  const handleGlobalNotification = useCallback((notification: GlobalNotification) => {
+    console.log('🌐 Received global notification:', notification);
+    
+    // Update the conversation list to show new message
+    setConversations(prev => 
+      prev.map(conv => {
+        if (conv.id === notification.conversation_id) {
+          return {
+            ...conv,
+            last_message: {
+              id: notification.message.id,
+              content: notification.message.content,
+              message_type: 'text',
+              sender: {
+                id: 0, // We don't have full sender info in notification
+                name: notification.sender_name,
+                avatar: null,
+                role: 'worker' as const // Default, will be updated when conversation is loaded
+              },
+              file_url: null,
+              is_read: false,
+              created_at: notification.message.created_at,
+              updated_at: notification.message.created_at
+            },
+            unread_count: conv.unread_count + 1
+          };
+        }
+        return conv;
+      })
+    );
+    
+    // Refresh global unread count
+    refreshUnreadCount();
+  }, [refreshUnreadCount]);
 
   // Global notifications for messages in other conversations
   const { connect: connectGlobalNotifications, disconnect: disconnectGlobalNotifications } = useGlobalNotifications({
     token: authToken,
-    onNewMessage: (notification: GlobalNotification) => {
-      console.log('Received global notification:', notification);
-      
-      // Update the conversation list to show new message
-      setConversations(prev => 
-        prev.map(conv => {
-          if (conv.id === notification.conversation_id) {
-            return {
-              ...conv,
-              last_message: {
-                id: notification.message.id,
-                content: notification.message.content,
-                message_type: 'text',
-                sender: {
-                  id: 0, // We don't have full sender info in notification
-                  name: notification.sender_name,
-                  avatar: null,
-                  role: 'worker' as const // Default, will be updated when conversation is loaded
-                },
-                file_url: null,
-                is_read: false,
-                created_at: notification.message.created_at,
-                updated_at: notification.message.created_at
-              },
-              unread_count: conv.unread_count + 1
-            };
-          }
-          return conv;
-        })
-      );
-      
-      // Refresh global unread count
-      refreshUnreadCount();
-    }
+    onNewMessage: handleGlobalNotification
   });
 
   // Connect to presence WebSocket when user is authenticated
@@ -163,6 +212,24 @@ export default function MessagesPage() {
   useEffect(() => {
     loadConversations();
   }, []);
+
+  // Connect to global notifications when user is authenticated
+  useEffect(() => {
+    if (authToken && user) {
+      console.log('🌐 Connecting to global notifications');
+      connectGlobalNotifications();
+      
+      return () => {
+        console.log('🌐 Disconnecting global notifications');
+        disconnectGlobalNotifications();
+      };
+    }
+  }, [authToken, user, connectGlobalNotifications, disconnectGlobalNotifications]);
+
+  // Auto-scroll to bottom when messages change or conversation changes
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages, selectedConversation, scrollToBottom]);
 
   const selectConversation = async (conversationId: string) => {
     try {
@@ -328,50 +395,21 @@ export default function MessagesPage() {
   // Connect to WebSocket when conversation is selected
   useEffect(() => {
     if (selectedConversation?.id && authToken) {
-      console.log('Connecting to WebSocket for conversation:', selectedConversation.id);
+      console.log('🔌 Connecting to WebSocket for conversation:', selectedConversation.id);
       connect(selectedConversation.id);
       
       return () => {
-        console.log('Disconnecting WebSocket');
+        console.log('🔌 Disconnecting WebSocket');
         disconnect();
       };
     }
-  }, [selectedConversation?.id, authToken]); // Depend on both conversation ID and auth token
-
-  // Connect to global notifications when user is authenticated
-  useEffect(() => {
-    if (authToken && user) {
-      console.log('Connecting to global notifications');
-      connectGlobalNotifications();
-      
-      return () => {
-        console.log('Disconnecting global notifications');
-        disconnectGlobalNotifications();
-      };
-    }
-  }, [authToken, user, connectGlobalNotifications, disconnectGlobalNotifications]);
-
-  // Auto-scroll to bottom when new messages arrive or conversation loads
-  const scrollToBottom = () => {
-    setTimeout(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }, 100); // Small delay to ensure DOM is updated
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages, selectedConversation]); // Scroll when messages change or conversation changes
+  }, [selectedConversation?.id, authToken, connect, disconnect]);
 
   const loadConversations = async () => {
     try {
       setLoading(true);
       const data = await chatAPI.getConversations();
       setConversations(data);
-      
-      // Auto-select first conversation if available
-      if (data.length > 0 && !selectedConversation) {
-        await selectConversation(data[0].id);
-      }
     } catch (error) {
       console.error('Error loading conversations:', error);
     } finally {
@@ -380,29 +418,64 @@ export default function MessagesPage() {
   };
 
   const handleSendMessage = async () => {
-    if (!newMessage.trim() || !selectedConversation) return;
+    if (!newMessage.trim() || !selectedConversation || !user) return;
 
     const messageContent = newMessage.trim();
     setNewMessage("");
 
+    // Create optimistic message for immediate UI update
+    const optimisticMessage: ChatMessage = {
+      id: `temp-${Date.now()}`, // Temporary ID
+      content: messageContent,
+      message_type: 'text',
+      sender: {
+        id: user.id,
+        name: user.full_name || `${user.first_name} ${user.last_name}`.trim() || 'You',
+        avatar: user.profile_picture || null,
+        role: user.role
+      },
+      file_url: null,
+      is_read: false,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    // Add optimistic message immediately
+    console.log('⚡ Adding optimistic message:', optimisticMessage.id);
+    setMessages(prev => [...prev, optimisticMessage]);
+    scrollToBottom();
+
     try {
       if (isConnected) {
         // Use WebSocket for real-time messaging
+        console.log('🔌 Sending message via WebSocket');
         sendMessage(messageContent);
       } else {
         // Fallback to REST API if WebSocket is not connected
-        await chatAPI.sendMessage(selectedConversation.id, {
+        console.log('🌐 Sending message via REST API (WebSocket not connected)');
+        const sentMessage = await chatAPI.sendMessage(selectedConversation.id, {
           content: messageContent,
           message_type: 'text'
         });
         
-        // Note: Don't manually add message to state - WebSocket will broadcast it
-        console.log('✅ Text message sent via REST API - will appear via WebSocket');
+        // Replace optimistic message with real message
+        setMessages(prev => 
+          prev.map(msg => 
+            msg.id === optimisticMessage.id ? sentMessage : msg
+          )
+        );
       }
     } catch (error) {
-      console.error('Error sending message:', error);
-      // Restore message on error
+      console.error('❌ Error sending message:', error);
+      
+      // Remove optimistic message on error
+      setMessages(prev => prev.filter(msg => msg.id !== optimisticMessage.id));
+      
+      // Restore message text
       setNewMessage(messageContent);
+      
+      // Show error to user (you might want to add a toast notification here)
+      alert('Failed to send message. Please try again.');
     }
   };
 
