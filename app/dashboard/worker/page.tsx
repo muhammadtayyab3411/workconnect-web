@@ -77,7 +77,7 @@ export default function WorkerDashboard() {
         {/* Quick Actions - Worker Specific */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-6">
           <Link 
-            href="/dashboard/find-jobs"
+            href="/dashboard/worker/jobs"
             className="bg-zinc-100 hover:bg-zinc-200 transition-colors rounded-md p-4 flex flex-col items-center gap-3 text-center h-24"
           >
             <div className="bg-white rounded-full w-10 h-10 flex items-center justify-center">
